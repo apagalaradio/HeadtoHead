@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultar API con Orden por DateTime UTC</title>
+</head>
+<body>
+    <h1>Consultar API</h1>
+
+    <label for="playerName1">Nombre del Jugador 1:</label>
+    <input type="text" id="playerName1" placeholder="Ejemplo: Faker">
+    <br><br>
+
+    <label for="playerName2">Nombre del Jugador 2:</label>
+    <input type="text" id="playerName2" placeholder="Ejemplo: Peanut">
+    <br><br>
+
+    <button id="fetchData">Ejecutar API</button>
+    <pre id="output"></pre>
+
+    <script>
+        document.getElementById("fetchData").addEventListener("click", async () => {
+            const playerName1 = document.getElementById("playerName1").value.trim();
+            const playerName2 = document.getElementById("playerName2").value.trim();
+
+            if (!playerName1 || !playerName2) {
+                alert("Por favor, ingresa ambos nombres de jugador.");
+                return;
+            }
+
+            const output = document.getElementById("output");
+            output.textContent = "Cargando...";
+
+            const fetchAllPlayerData = async (playerName) => {
+                let allData = [];
+                let offset = 0;
+
+                while (true) {
+                    const url = `https://lol.fandom.com/api.php?action=cargoquery&tables=ScoreboardPlayers&fields=Name,PlayerWin,GameId,Team,DateTime_UTC&where=Name%20LIKE%20'%25${encodeURIComponent(playerName)}%25'&limit=500&format=json&origin=*&offset=${offset}`;
+                    
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+
+                        const currentBatch = data.cargoquery.map(item => item.title);
+                        allData = allData.concat(currentBatch);
+
+                        if (currentBatch.length < 500) break; // Última página
+                        offset += 500;
+                    } catch (error) {
+                        throw new Error(`Error al obtener datos para ${playerName}: ${error.message}`);
+                    }
+                }
+
+                return allData;
+            };
+
+            try {
+                const [data1, data2] = await Promise.all([
+                    fetchAllPlayerData(playerName1),
+                    fetchAllPlayerData(playerName2),
+                ]);
+
+                const filteredMatches = data1.filter(match1 =>
+                    data2.some(match2 => 
+                        match1.GameId === match2.GameId && match1.Team !== match2.Team
+                    )
+                );
+
+                const uniqueMatches = Array.from(
+                    new Map(
+                        filteredMatches.map(match => [match.GameId, match])
+                    ).values()
+                );
+
+                // Ordenar por "DateTime UTC"
+                uniqueMatches.sort((a, b) => 
+                    new Date(a["DateTime UTC"]) - new Date(b["DateTime UTC"])
+                );
+
+                const playerWinYes = uniqueMatches.filter(match => match.PlayerWin === "Yes").length;
+                const playerWinNo = uniqueMatches.filter(match => match.PlayerWin === "No").length;
+
+                const totalRecords1 = data1.length;
+                const totalRecords2 = data2.length;
+
+                output.textContent = `
+Registros totales:
+- Jugador 1 (${playerName1}): ${totalRecords1}
+- Jugador 2 (${playerName2}): ${totalRecords2}
+
+Registros únicos coincidentes por GameId (ordenados por DateTime UTC):
+- Total: ${uniqueMatches.length}
+- PlayerWin = "Yes": ${playerWinYes}
+- PlayerWin = "No": ${playerWinNo}
+
+Detalles de registros únicos:
+${JSON.stringify(uniqueMatches, null, 2)}
+                `;
+            } catch (error) {
+                output.textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>
