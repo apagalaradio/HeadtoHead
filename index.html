@@ -1,111 +1,208 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consultar API con Orden por DateTime UTC</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Head to Head</title>
+  <style>
+    table {
+      border-collapse: collapse;
+      margin-top: 20px;
+      width: 100%;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      cursor: pointer;
+      background-color: #f2f2f2;
+    }
+    th.sorted-asc::after {
+      content: " ▲";
+    }
+    th.sorted-desc::after {
+      content: " ▼";
+    }
+  </style>
 </head>
 <body>
-    <h1>Consultar API</h1>
+  <h1>Head to Head</h1>
 
-    <label for="playerName1">Nombre del Jugador 1:</label>
-    <input type="text" id="playerName1" placeholder="Ejemplo: Faker">
-    <br><br>
+  <label for="playerName1">Player 1 Name:</label>
+  <input type="text" id="playerName1" placeholder="Example: Faker">
+  <br><br>
 
-    <label for="playerName2">Nombre del Jugador 2:</label>
-    <input type="text" id="playerName2" placeholder="Ejemplo: Peanut">
-    <br><br>
+  <label for="playerName2">Player 2 Name:</label>
+  <input type="text" id="playerName2" placeholder="Example: Peanut">
+  <br><br>
 
-    <button id="fetchData">Ejecutar API</button>
-    <pre id="output"></pre>
+  <button id="fetchData">Run API</button>
+  <pre id="summary"></pre>
+  <div id="tableOutput"></div>
 
-    <script>
-        document.getElementById("fetchData").addEventListener("click", async () => {
-            const playerName1 = document.getElementById("playerName1").value.trim();
-            const playerName2 = document.getElementById("playerName2").value.trim();
+  <script>
+    document.getElementById("fetchData").addEventListener("click", async () => {
+      const playerName1 = document.getElementById("playerName1").value.trim();
+      const playerName2 = document.getElementById("playerName2").value.trim();
 
-            if (!playerName1 || !playerName2) {
-                alert("Por favor, ingresa ambos nombres de jugador.");
-                return;
+      if (!playerName1 || !playerName2) {
+        alert("Please enter both player names.");
+        return;
+      }
+
+      const summary = document.getElementById("summary");
+      const tableOutput = document.getElementById("tableOutput");
+      summary.textContent = "Loading...";
+      tableOutput.innerHTML = "";
+
+      const fetchAllPlayerData = async (playerName) => {
+        let allData = [];
+        let offset = 0;
+
+        while (true) {
+          const url = `https://lol.fandom.com/api.php?action=cargoquery&tables=ScoreboardPlayers&fields=Name,PlayerWin,GameId,Team,DateTime_UTC,Champion&where=Name%20LIKE%20'${encodeURIComponent(playerName)}'&limit=500&format=json&origin=*&offset=${offset}`;
+
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const output = document.getElementById("output");
-            output.textContent = "Cargando...";
+            const data = await response.json();
+            const currentBatch = data.cargoquery.map(item => item.title);
+            allData = allData.concat(currentBatch);
 
-            const fetchAllPlayerData = async (playerName) => {
-                let allData = [];
-                let offset = 0;
+            if (currentBatch.length < 500) break;
+            offset += 500;
+          } catch (error) {
+            throw new Error(`Error fetching data for ${playerName}: ${error.message}`);
+          }
+        }
 
-                while (true) {
-                    const url = `https://lol.fandom.com/api.php?action=cargoquery&tables=ScoreboardPlayers&fields=Name,PlayerWin,GameId,Team,DateTime_UTC&where=Name%20LIKE%20'${encodeURIComponent(playerName)}'&limit=500&format=json&origin=*&offset=${offset}`;
-                    
-                    try {
-                        const response = await fetch(url);
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
+        return allData;
+      };
 
-                        const data = await response.json();
+      try {
+        const [data1, data2] = await Promise.all([
+          fetchAllPlayerData(playerName1),
+          fetchAllPlayerData(playerName2),
+        ]);
 
-                        const currentBatch = data.cargoquery.map(item => item.title);
-                        allData = allData.concat(currentBatch);
-
-                        if (currentBatch.length < 500) break; // Última página
-                        offset += 500;
-                    } catch (error) {
-                        throw new Error(`Error al obtener datos para ${playerName}: ${error.message}`);
-                    }
-                }
-
-                return allData;
-            };
-
-            try {
-                const [data1, data2] = await Promise.all([
-                    fetchAllPlayerData(playerName1),
-                    fetchAllPlayerData(playerName2),
-                ]);
-
-                const filteredMatches = data1.filter(match1 =>
-                    data2.some(match2 => 
-                        match1.GameId === match2.GameId && match1.Team !== match2.Team
-                    )
-                );
-
-                const uniqueMatches = Array.from(
-                    new Map(
-                        filteredMatches.map(match => [match.GameId, match])
-                    ).values()
-                );
-
-                // Ordenar por "DateTime UTC"
-                uniqueMatches.sort((a, b) => 
-                    new Date(a["DateTime UTC"]) - new Date(b["DateTime UTC"])
-                );
-
-                const playerWinYes = uniqueMatches.filter(match => match.PlayerWin === "Yes").length;
-                const playerWinNo = uniqueMatches.filter(match => match.PlayerWin === "No").length;
-
-                const totalRecords1 = data1.length;
-                const totalRecords2 = data2.length;
-
-                output.textContent = `
-Registros totales:
-- Jugador 1 (${playerName1}): ${totalRecords1}
-- Jugador 2 (${playerName2}): ${totalRecords2}
-
-Registros únicos coincidentes por GameId (ordenados por DateTime UTC):
-- Total: ${uniqueMatches.length}
-- PlayerWin = "Yes": ${playerWinYes}
-- PlayerWin = "No": ${playerWinNo}
-
-Detalles de registros únicos:
-${JSON.stringify(uniqueMatches, null, 2)}
-                `;
-            } catch (error) {
-                output.textContent = error.message;
-            }
+        const filteredMatches = data1.flatMap(match1 => {
+          const match2 = data2.find(m2 => m2.GameId === match1.GameId && m2.Team !== match1.Team);
+          return match2 ? [{ match1, match2 }] : [];
         });
-    </script>
+
+        const uniqueByGameId = new Map();
+        for (const pair of filteredMatches) {
+          uniqueByGameId.set(pair.match1.GameId, pair);
+        }
+
+        const uniqueMatches = Array.from(uniqueByGameId.values());
+
+        uniqueMatches.sort((a, b) =>
+          new Date(a.match1["DateTime UTC"]) - new Date(b.match1["DateTime UTC"])
+        );
+
+        const player1Wins = uniqueMatches.filter(pair => pair.match1.PlayerWin === "Yes").length;
+        const player2Wins = uniqueMatches.filter(pair => pair.match1.PlayerWin === "No").length;
+
+        const totalRecords1 = data1.length;
+        const totalRecords2 = data2.length;
+
+        summary.textContent = `
+Total Games by Player:
+- ${playerName1}: ${totalRecords1}
+- ${playerName2}: ${totalRecords2}
+
+Games between ${playerName1} and ${playerName2}:
+- Total: ${uniqueMatches.length}
+- Player1Win = ${player1Wins}
+- Player2Win = ${player2Wins}
+        `;
+
+        const table = document.createElement("table");
+        table.id = "resultsTable";
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>DateTime UTC</th>
+              <th>GameId</th>
+              <th>Player1Win</th>
+              <th>${playerName1}'s Champion</th>
+              <th>${playerName2}'s Champion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${uniqueMatches.map((pair, index) => {
+              const isPlayer1Winner = pair.match1.PlayerWin === "Yes";
+              const champ1 = `${pair.match1.Champion} [${pair.match1.Team}]`;
+              const champ2 = `${pair.match2.Champion} [${pair.match2.Team}]`;
+              return `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${pair.match1["DateTime UTC"]}</td>
+                  <td>${pair.match1.GameId}</td>
+                  <td>${pair.match1.PlayerWin}</td>
+                  <td style="background-color: ${isPlayer1Winner ? '#d4edda' : ''};">${champ1}</td>
+                  <td style="background-color: ${!isPlayer1Winner ? '#d4edda' : ''};">${champ2}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        `;
+        tableOutput.appendChild(table);
+        makeTableSortable(document.getElementById("resultsTable"));
+      } catch (error) {
+        summary.textContent = error.message;
+      }
+    });
+
+    function makeTableSortable(table) {
+      const headers = table.querySelectorAll("th");
+      let sortIndex = -1;
+      let ascending = true;
+
+      headers.forEach((header, i) => {
+        header.addEventListener("click", () => {
+          const tbody = table.querySelector("tbody");
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+          const type = header.textContent.includes("DateTime") ? "date" : "text";
+
+          if (sortIndex === i) ascending = !ascending;
+          else {
+            sortIndex = i;
+            ascending = true;
+          }
+
+          headers.forEach(h => h.classList.remove("sorted-asc", "sorted-desc"));
+          header.classList.add(ascending ? "sorted-asc" : "sorted-desc");
+
+          rows.sort((a, b) => {
+            const cellA = a.children[i].textContent.trim();
+            const cellB = b.children[i].textContent.trim();
+
+            if (type === "date") {
+              return ascending 
+                ? new Date(cellA) - new Date(cellB) 
+                : new Date(cellB) - new Date(cellA);
+            } else if (!isNaN(cellA) && !isNaN(cellB)) {
+              return ascending ? cellA - cellB : cellB - cellA;
+            } else {
+              return ascending 
+                ? cellA.localeCompare(cellB) 
+                : cellB.localeCompare(cellA);
+            }
+          });
+
+          tbody.innerHTML = "";
+          rows.forEach(row => tbody.appendChild(row));
+        });
+      });
+    }
+  </script>
 </body>
 </html>
